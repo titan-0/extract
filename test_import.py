@@ -1,5 +1,6 @@
 import pdfplumber
 from file_to_postgres import DataImporter, best_table_match
+from pdf_table_helper import determine_pdf_table_type
 import pandas as pd
 import os
 
@@ -65,14 +66,32 @@ for fname in os.listdir("test_files"):
     _, extension = os.path.splitext(fname)
     extension = extension.lower()
    
-    
-    if(extension in ['.csv', '.xlsx', '.xls', '.txt']):
-        columns = get_column_names(fpath)
-        print(f"File: {fname}, Columns: {columns}")
-        table_name = best_table_match(columns, schemas, PRIMARY_KEY_SYNONYMS)
-        print("Most likely table:", table_name)
-        importer.import_to_db(importer.read_file(fpath), table_name)
-
+    # Use common handling for all file types
+    if extension in ['.csv', '.xlsx', '.xls', '.txt']:
+        print(f"Processing file: {fname}")
+        df = importer.read_file(fpath)
+        
+        # Use the PDF table helper for all file types for more accurate detection
+        table_name = determine_pdf_table_type(df, schemas, PRIMARY_KEY_SYNONYMS)
+        
+        if table_name:
+            print(f"File: {fname}, detected as: {table_name} table")
+            success = importer.import_to_db(df, table_name)
+            if success:
+                print(f"✅ Successfully imported {fname} into {table_name}")
+            else:
+                print(f"❌ Failed to import {fname} into {table_name}")
+        else:
+            # Fallback to best_table_match if determine_pdf_table_type couldn't identify
+            columns = list(df.columns)
+            print(f"File: {fname}, Columns: {columns}")
+            table_name = best_table_match(columns, schemas, PRIMARY_KEY_SYNONYMS)
+            print("Falling back to best_table_match. Most likely table:", table_name)
+            
+            if table_name:
+                importer.import_to_db(df, table_name)
+            else:
+                print(f"❌ Could not determine target table for {fname}")
     
     # Special handling for PDF files to show and process all tables
     if extension == '.pdf':
@@ -86,9 +105,11 @@ for fname in os.listdir("test_files"):
                 print(f"\n--- Table {i+1} Preview ---")
                 print(table_df.head())
                 
-                # Try to determine table type for each individual table
-                table_columns = list(table_df.columns)
-                current_table_type = best_table_match(table_columns, schemas, PRIMARY_KEY_SYNONYMS)
+                # Try to determine table type for each individual table using our helper
+                current_table_type = determine_pdf_table_type(table_df, schemas, PRIMARY_KEY_SYNONYMS)
+                
+                if current_table_type:
+                    print(f"Table {i+1} identified as: {current_table_type} table")
                 
                 if current_table_type:
                     print(f"Importing table {i+1} into {current_table_type}")

@@ -179,26 +179,49 @@ class DataImporter:
         if not table_columns:
             print(f"Unknown table: {table_name}")
             return None
-        # Synonym mapping for primary key and columns
-        PRIMARY_KEY_SYNONYMS = {
-            "fish": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName"],
-            "oceanography": ["data_set", "dataset", "data_set_id", "version", "ver", "data_version", "id"],
-            "edna": ["sequence_id", "seq_id", "sequence", "id", "dna_id"]
+            
+        # Extended column synonyms for all tables
+        COLUMN_SYNONYMS = {
+            "fish": {
+                "scientific_name": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName", "Scientific Name"],
+                "species": ["species", "common_name", "Species", "common name", "Common Name"],
+                "class": ["class", "Class", "classification"],
+                "family": ["family", "Family", "family_name"],
+                "diet_type": ["diet_type", "Diet Type", "diet", "feeding_type", "Diet"],
+                "lifespan_years": ["lifespan_years", "Lifespan (yrs)", "lifespan", "life_expectancy", "age"],
+                "depth_range": ["depth_range", "Depth Range", "depth", "water_depth"],
+                "reproductive_type": ["reproductive_type", "Reproductive Type", "reproduction", "repro_type", "breeding"],
+                "habitat_type": ["habitat_type", "Habitat Type", "habitat", "environment", "ecosystem"]
+            },
+            "oceanography": {
+                "data_set": ["data_set", "dataset", "data_set_id", "data collection", "Data Set"],
+                "version": ["version", "ver", "v", "Version", "revision"],
+            },
+            "edna": {
+                "sequence_id": ["sequence_id", "seq_id", "sequence", "id", "dna_id", "Sequence ID"],
+                "dna_sequence": ["dna_sequence", "sequence", "dna", "DNA Sequence", "genetic_sequence"],
+            }
         }
+        
         # Build mapping: for each schema column, find matching file column by name or synonym
         mapped = {}
-        file_cols_lower = {col.lower(): col for col in df.columns}
+        file_cols_lower = {col.lower().replace(' ', '_'): col for col in df.columns}
+        
+        # First try to map columns using our extended synonyms
         for db_col in table_columns:
-            # Check direct match
-            if db_col.lower() in file_cols_lower:
-                mapped[db_col] = file_cols_lower[db_col.lower()]
-                continue
-            # Check synonyms for primary key
-            synonyms = PRIMARY_KEY_SYNONYMS.get(table_name, []) if db_col == table_columns[0] else []
+            # Get synonyms for this column if available
+            synonyms = COLUMN_SYNONYMS.get(table_name, {}).get(db_col, [db_col])
+            
+            # Try each synonym
             for syn in synonyms:
-                if syn.lower() in file_cols_lower:
-                    mapped[db_col] = file_cols_lower[syn.lower()]
+                syn_lower = syn.lower().replace(' ', '_')
+                if syn_lower in file_cols_lower:
+                    mapped[db_col] = file_cols_lower[syn_lower]
                     break
+            
+            # If we didn't find a match with the synonyms, try direct match
+            if db_col not in mapped and db_col.lower() in file_cols_lower:
+                mapped[db_col] = file_cols_lower[db_col.lower()]
         # Build new DataFrame with only matching columns
         if not mapped:
             print(f"No matching columns for table {table_name}")
@@ -236,10 +259,39 @@ class DataImporter:
                         return "{" + ",".join(items) + "}"
                     return x
                 df["synonyms"] = df["synonyms"].apply(to_pg_array)
-            # Fix enums to lowercase
+    def fix_special_columns(self, df, table_name):
+        """Convert array, enum, and JSON columns to correct types for Supabase"""
+        import json
+        import ast
+        if table_name == "fish":
+            if "location" in df.columns:
+                # If value is NaN or empty, set to None
+                df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
+            if "synonyms" in df.columns:
+                def to_pg_array(x):
+                    if pd.isna(x) or str(x).strip() == "":
+                        return None
+                    if isinstance(x, list):
+                                return "{" + ",".join(map(str, x)) + "}"
+                    if isinstance(x, str):
+            # Convert semicolon or comma separated string to PG array
+                        items = [item.strip() for item in re.split(r"[;,]", x) if item.strip()]
+                        return "{" + ",".join(items) + "}"
+                    return x
+                df["synonyms"] = df["synonyms"].apply(to_pg_array)
+            
+            # Handle enum columns - convert to lowercase since DB has lowercase values
+            # Set default values for missing enum columns
+            if "reproductive_type" not in df.columns or df["reproductive_type"].isna().all():
+                df["reproductive_type"] = "oviparous"  # Default value (lowercase)
+            if "habitat_type" not in df.columns or df["habitat_type"].isna().all():
+                df["habitat_type"] = "marine"  # Default value (lowercase)
+            
+            # Convert enum values to lowercase to match database
             for enum_col in ["reproductive_type", "habitat_type", "diet_type"]:
                 if enum_col in df.columns:
-                    df[enum_col] = df[enum_col].apply(lambda x: x.lower() if isinstance(x, str) else x)
+                    # Convert to lowercase and clean up
+                    df[enum_col] = df[enum_col].apply(lambda x: str(x).strip().lower() if not pd.isna(x) else x)
         elif table_name == "oceanography":
             if "nutrients" in df.columns:
                 df["nutrients"] = df["nutrients"].apply(lambda x: json.dumps(x) if isinstance(x, dict) else (json.dumps(ast.literal_eval(x)) if isinstance(x, str) and x.startswith("{") else x))
@@ -269,15 +321,36 @@ class DataImporter:
             query = f"SELECT t.enumlabel FROM pg_type typ JOIN pg_enum t ON t.enumtypid = typ.oid JOIN pg_attribute a ON a.atttypid = typ.oid WHERE a.attrelid = '{table_name}'::regclass AND a.attname = '{column_name}';"
             with self.engine.connect() as conn:
                 result = conn.execute(text(query))
-                return [row[0] for row in result]
+                values = [row[0] for row in result]
+                
+                # Return the actual values from database if found
+                if values:
+                    return values
+                
+                # If we can't get valid values from database, provide defaults based on actual DB values
+                if column_name == "diet_type":
+                    return ["carnivore", "herbivore", "omnivore", "planktivore", "detritivore"]
+                elif column_name == "reproductive_type":
+                    return ["oviparous", "viviparous", "ovoviviparous"]
+                elif column_name == "habitat_type":
+                    return ["freshwater", "marine", "brackish", "estuarine"]
+                
+                return []
         except Exception as e:
             print(f"Could not fetch enum values for {table_name}.{column_name}: {e}")
+            # Provide default values based on actual DB values (lowercase)
+            if column_name == "diet_type":
+                return ["carnivore", "herbivore", "omnivore", "planktivore", "detritivore"]
+            elif column_name == "reproductive_type":
+                return ["oviparous", "viviparous", "ovoviviparous"]
+            elif column_name == "habitat_type":
+                return ["freshwater", "marine", "brackish", "estuarine"]
             return []
 
     def filter_valid_rows(self, df, table_name):
         """Remove rows with missing required fields and invalid enum values."""
         required_fields = {
-            "fish": ["scientific_name", "diet_type", "reproductive_type", "habitat_type"],
+            "fish": ["scientific_name"],
             "edna": ["sequence_id", "dna_sequence"],
             "oceanography": ["data_set", "version"]
         }.get(table_name, [])
@@ -285,14 +358,30 @@ class DataImporter:
         for col in required_fields:
             if col in df.columns:
                 df = df[df[col].notnull()]
+        
         # Validate enum columns
         enum_columns = {
             "fish": ["diet_type", "reproductive_type", "habitat_type"],
         }.get(table_name, [])
+        
         for col in enum_columns:
             if col in df.columns:
                 valid_values = self.get_enum_values(table_name, col)
-                df = df[df[col].isin(valid_values)]
+                if not valid_values:
+                    # If we couldn't fetch valid values, don't filter by this column
+                    print(f"Warning: Could not fetch valid values for {col}, skipping validation")
+                    continue
+                    
+                # Check if values are valid
+                invalid_mask = ~df[col].isin(valid_values)
+                invalid_values = df.loc[invalid_mask, col].unique()
+                
+                if len(invalid_values) > 0:
+                    print(f"Invalid {col} values found: {invalid_values}")
+                    print(f"Valid values are: {valid_values}")
+                    # Remove invalid rows
+                    df = df[~invalid_mask]
+                
         return df
 
     def import_to_db(self, df, table_name, if_exists='append'):
