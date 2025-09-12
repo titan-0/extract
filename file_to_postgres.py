@@ -2,11 +2,11 @@ import os
 import pandas as pd
 import psycopg2
 import PyPDF2
-import tabula
+import pdfplumber
 import re
 import ast
 import json
-from sqlalchemy import create_engine,text
+from sqlalchemy import create_engine,text,inspect
 from configparser import ConfigParser
 
 # --- Supabase connection details from db.py ---
@@ -22,6 +22,39 @@ OCEANOGRAPHY_COLUMNS = [
 EDNA_COLUMNS = [
     "sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"
 ]
+
+# Helper function to determine which table a dataset belongs to
+def best_table_match(columns, schemas, pk_synonyms):
+    scores = {}
+    for table, schema in schemas.items():
+        pk_syns = pk_synonyms.get(table, [])
+        pk_found = any(col.lower() in [syn.lower() for syn in pk_syns] for col in columns)
+        other_matches = len(set([c.lower() for c in columns]) & set([c.lower() for c in schema["columns"]]))
+        scores[table] = (pk_found, other_matches)
+    # Prefer tables where pk_found is True and most other columns match
+    best = max(scores.items(), key=lambda x: (x[1][0], x[1][1]))
+    return best[0] if best[1][0] else None
+
+PRIMARY_KEY_SYNONYMS = {
+    "fish": ["scientific_name", "sci_name", "species_name", "fish_name","scientificName"],
+    "oceanography": ["data_set", "dataset", "data_set_id", "version", "ver", "data_version"],
+    "edna": ["sequence_id", "seq_id", "sequence", "id", "dna_id"]
+}
+
+schemas = {
+    "fish": {
+        "primary_key": "scientific_name",
+        "columns": ["scientific_name", "species", "class", "family", "location", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
+    },
+    "oceanography": {
+        "primary_key": ["data_set", "version"],
+        "columns": ["data_set", "version", "location", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
+    },
+    "edna": {
+        "primary_key": "sequence_id",
+        "columns": ["sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"]
+    }
+}
 
 class DataImporter:
     def __init__(self, database_url=SUPABASE_DATABASE_URL):
@@ -40,7 +73,7 @@ class DataImporter:
             print(f"Error connecting to Supabase: {error}")
 
     
-
+    # Method moved outside class
 
 
     def read_file(self, file_path):
@@ -52,10 +85,23 @@ class DataImporter:
             return self.read_csv(file_path)
         elif extension in ['.xls', '.xlsx']:
             return self.read_excel(file_path)
-        elif extension == '.pdf':
-            return self.read_pdf(file_path)
+        elif extension == '.txt':
+            return self.read_txt(file_path)
         else:
             raise ValueError(f"Unsupported file format: {extension}")
+      
+    def read_txt(self, file_path):
+        """Read TXT file as table (tab or comma delimited)"""
+        # Try tab first, then comma
+        try:
+            df = pd.read_csv(file_path, sep='\t')
+            if df.shape[1] == 1:
+                # Only one column, try comma
+                df = pd.read_csv(file_path, sep=',')
+            return df
+        except Exception as e:
+            print(f"TXT extraction failed: {e}")
+            return pd.DataFrame()
             
     def read_csv(self, file_path):
         """Read CSV file"""
@@ -66,18 +112,37 @@ class DataImporter:
         return pd.read_excel(file_path)
         
     def read_pdf(self, file_path):
-        """Extract tables from PDF file"""
-        # Try tabula-py for table extraction first
+        """Extract tables from PDF file - returns a list of DataFrames"""
+        
         try:
-            tables = tabula.read_pdf(file_path, pages='all', multiple_tables=True)
-            if tables and len(tables) > 0:
-                # Return first table or combine tables as needed
-                return tables[0]
+            tables = []
+            with pdfplumber.open(file_path) as pdf:
+                print(f"PDF has {len(pdf.pages)} pages")
+                for page_idx, page in enumerate(pdf.pages):
+                    page_tables = page.extract_tables()
+                    print(f"Page {page_idx+1}: found {len(page_tables)} tables")
+                    for table_idx, table in enumerate(page_tables):
+                        if table and len(table) > 1:
+                            headers = table[0]
+                            data = table[1:]
+                            df = pd.DataFrame(data, columns=headers)
+                            tables.append(df)
+                            print(f"  Table {table_idx+1}: {len(data)} rows, {len(headers)} columns")
+                        else:
+                            print(f"  Table {table_idx+1}: Empty or invalid table structure")
+                
+                if tables:
+                    print(f"Extracted {len(tables)} tables from PDF")
+                    return tables
+                else:
+                    print("No valid tables found in PDF.")
+            
         except Exception as e:
-            print(f"Tabula extraction failed: {e}")
+            print(f"pdfplumber extraction failed: {e}")
             
         # Fallback to PyPDF2 for text extraction and manual parsing
         try:
+            print("Falling back to PyPDF2 text extraction...")
             text = ""
             with open(file_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
@@ -97,14 +162,14 @@ class DataImporter:
                 # Try to identify header row or use first row as header
                 headers = data[0]
                 df = pd.DataFrame(data[1:], columns=headers)
-                return df
-            return pd.DataFrame()
+                return [df]  # Return as a list with one DataFrame to be consistent
+            return []  # Empty list when no tables found
         except Exception as e:
             print(f"PDF extraction failed: {e}")
-            return pd.DataFrame()
+            return []  # Empty list when extraction fails
             
     def map_columns(self, df, table_name):
-        """Map dataframe columns to Supabase table columns"""
+        """Map dataframe columns to Supabase table columns, using synonyms for primary key and other columns"""
         # Use schemas from db.py
         table_columns = {
             "fish": FISH_COLUMNS,
@@ -114,25 +179,63 @@ class DataImporter:
         if not table_columns:
             print(f"Unknown table: {table_name}")
             return None
-        # Map columns by name (case-insensitive)
+        # Synonym mapping for primary key and columns
+        PRIMARY_KEY_SYNONYMS = {
+            "fish": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName"],
+            "oceanography": ["data_set", "dataset", "data_set_id", "version", "ver", "data_version", "id"],
+            "edna": ["sequence_id", "seq_id", "sequence", "id", "dna_id"]
+        }
+        # Build mapping: for each schema column, find matching file column by name or synonym
         mapped = {}
-        for col in df.columns:
-            for db_col in table_columns:
-                if col.strip().lower() == db_col.lower():
-                    mapped[db_col] = col
+        file_cols_lower = {col.lower(): col for col in df.columns}
+        for db_col in table_columns:
+            # Check direct match
+            if db_col.lower() in file_cols_lower:
+                mapped[db_col] = file_cols_lower[db_col.lower()]
+                continue
+            # Check synonyms for primary key
+            synonyms = PRIMARY_KEY_SYNONYMS.get(table_name, []) if db_col == table_columns[0] else []
+            for syn in synonyms:
+                if syn.lower() in file_cols_lower:
+                    mapped[db_col] = file_cols_lower[syn.lower()]
+                    break
         # Build new DataFrame with only matching columns
         if not mapped:
             print(f"No matching columns for table {table_name}")
             return None
-        return df[[mapped[c] for c in mapped]] if mapped else None
+        # Fill missing columns with NaN
+        for db_col in table_columns:
+            if db_col not in mapped:
+                mapped[db_col] = None
+        # Build DataFrame with correct columns
+        new_df = pd.DataFrame()
+        for db_col in table_columns:
+            if mapped[db_col] is not None:
+                new_df[db_col] = df[mapped[db_col]]
+            else:
+                new_df[db_col] = pd.NA
+        return new_df
 
     def fix_special_columns(self, df, table_name):
         """Convert array, enum, and JSON columns to correct types for Supabase"""
         import json
         import ast
         if table_name == "fish":
+            if "location" in df.columns:
+                # If value is NaN or empty, set to None
+                df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
             if "synonyms" in df.columns:
-                df["synonyms"] = df["synonyms"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x)
+                def to_pg_array(x):
+                    if pd.isna(x) or str(x).strip() == "":
+                        return None
+                    if isinstance(x, list):
+                                return "{" + ",".join(map(str, x)) + "}"
+                    if isinstance(x, str):
+            # Convert semicolon or comma separated string to PG array
+                        items = [item.strip() for item in re.split(r"[;,]", x) if item.strip()]
+                        return "{" + ",".join(items) + "}"
+                    return x
+                df["synonyms"] = df["synonyms"].apply(to_pg_array)
             # Fix enums to lowercase
             for enum_col in ["reproductive_type", "habitat_type", "diet_type"]:
                 if enum_col in df.columns:
@@ -141,8 +244,21 @@ class DataImporter:
             if "nutrients" in df.columns:
                 df["nutrients"] = df["nutrients"].apply(lambda x: json.dumps(x) if isinstance(x, dict) else (json.dumps(ast.literal_eval(x)) if isinstance(x, str) and x.startswith("{") else x))
         elif table_name == "edna":
+            if "location" in df.columns:
+                # If value is NaN or empty, set to None
+                df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
             if "blast_matching" in df.columns:
-                df["blast_matching"] = df["blast_matching"].apply(lambda x: json.dumps(x) if isinstance(x, dict) else (json.dumps(ast.literal_eval(x)) if isinstance(x, str) and x.startswith("{") else x))
+                def to_json(x):
+                    if pd.isna(x) or str(x).strip() == "":
+                        return None
+                    if isinstance(x, dict):
+                        return json.dumps(x)
+                    try:
+                        # Convert Python dict-string to JSON string
+                        return json.dumps(eval(x)) if isinstance(x, str) and x.startswith("{") else x
+                    except Exception:
+                        return x  # fallback
+                df["blast_matching"] = df["blast_matching"].apply(to_json)
             if "species_detected" in df.columns:
                 df["species_detected"] = df["species_detected"].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else x)
         return df
@@ -196,9 +312,22 @@ class DataImporter:
             if mapped_df.empty:
                 print(f"No valid rows to import for table '{table_name}' after filtering.")
                 return False
-            # Insert data using SQLAlchemy
-            mapped_df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
-            print(f"Successfully imported {len(mapped_df)} rows to '{table_name}' on Supabase")
+                # Flexible batch upsert for all tables
+                # Detect primary key(s) from database
+            
+            insp = inspect(self.engine)
+            pk_cols = insp.get_pk_constraint(table_name)['constrained_columns']
+            if not pk_cols:
+                print(f"No primary key found for table '{table_name}'. Upsert not possible.")
+                return False
+            columns = list(mapped_df.columns)
+            set_clause = ', '.join([f"{col}=EXCLUDED.{col}" for col in columns if col not in pk_cols])
+            pk_sql = ', '.join(pk_cols)
+            insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join([f':{col}' for col in columns])}) ON CONFLICT ({pk_sql}) DO UPDATE SET {set_clause}"
+            values = mapped_df.to_dict(orient='records')
+            with self.engine.begin() as conn:
+                conn.execute(text(insert_sql), values)
+            print(f"Successfully upserted {len(mapped_df)} rows to '{table_name}' on Supabase")
             return True
         except Exception as e:
             print(f"Error importing data to table '{table_name}': {e}")
@@ -209,14 +338,4 @@ class DataImporter:
             self.conn.close()
             print("Database connection closed")
 
-# Usage example
-if __name__ == "__main__":
-    importer = DataImporter()
-    # Example usage:
-    # df = importer.read_file("path/to/your/fish_data.csv")
-    # importer.import_to_db(df, "fish")
-    # df = importer.read_file("path/to/your/oceanography.xlsx")
-    # importer.import_to_db(df, "oceanography")
-    # df = importer.read_file("path/to/your/edna.csv")
-    # importer.import_to_db(df, "edna")
-    importer.close()
+

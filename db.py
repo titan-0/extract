@@ -25,10 +25,10 @@ fish = Table(
     Column("lifespan_years", Float),
     Column("migration_patterns", String(200)),
     Column("synonyms", ARRAY(String)),  # multiple synonyms
-    Column("reproductive_type", Enum("Oviparous", "Viviparous", "Ovoviviparous", name="reproductive_type_enum")),
-    Column("habitat_type", Enum("Freshwater", "Marine", "Brackish", "Estuarine", name="habitat_type_enum")),
+    Column("reproductive_type", Enum("Oviparous", "Viviparous", "Ovoviviparous", name="reproductive_type_enum"),nullable=True,default=None),
+    Column("habitat_type", Enum("Freshwater", "Marine", "Brackish", "Estuarine", name="habitat_type_enum"),nullable=True,default=None),
     Column("phylum", String(100)),
-    Column("diet_type", Enum("Carnivore", "Herbivore", "Omnivore", "Planktivore", "Detritivore", name="diet_type_enum")),
+    Column("diet_type", Enum("Carnivore", "Herbivore", "Omnivore", "Planktivore", "Detritivore", name="diet_type_enum"),nullable=True,default=None),
 )
 
 # Oceanography table with location as geography(Point)
@@ -52,12 +52,12 @@ oceanography = Table(
     PrimaryKeyConstraint("data_set", "version")
 )
 
-from sqlalchemy import Table, Column, String, Text, Float, Date, JSON
-from geoalchemy2 import Geography
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
-from sqlalchemy import MetaData
 
-metadata = MetaData()
+
+
+
+
+# metadata = MetaData()
 
 EDNA = Table(
     "edna", metadata,
@@ -69,7 +69,6 @@ EDNA = Table(
     Column("location", Geography(geometry_type='POINT', srid=4326)),  
     Column("collector", String),                  
     Column("sample_type", String),                # Type of sample: water, sediment, tissue
-    # Column("environmental_params", JSONB),       # JSON object: temperature, pH, salinity, etc.
     Column("species_detected", ARRAY(String)),    # Array of detected species names
     Column("quality_score", Float),              # Quality score
     Column("status", String),                     # Status of the sample
@@ -77,11 +76,11 @@ EDNA = Table(
     Column("reference_link", String),            # Reference link
     Column("project", String),                    # Project name
     Column("notes", Text),                        # Additional notes
-    # Column("dataset", String),                    # Dataset name
-    # Column("version", String),                    # Version
+    
+    
 )
 
 
 # Create both tables
 metadata.create_all(engine)
-print("✅ 'fish' and 'oceanography' tables created successfully with PostGIS location column!")
+# print("✅ 'fish' and 'oceanography' tables created successfully with PostGIS location column!")
