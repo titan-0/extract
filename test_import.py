@@ -131,7 +131,9 @@ for fname in os.listdir("test_files"):
             continue  # Skip to next file
     
         
-  # Move processed file to test_files2 directory
+    # Move processed file to test_files2 directory
+    # Create the directory if it doesn't exist
+    os.makedirs("test_files2", exist_ok=True)
     src = fpath
     dst = os.path.join("test_files2", fname)
     os.rename(src, dst)
