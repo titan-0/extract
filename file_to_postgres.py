@@ -1,11 +1,8 @@
 import os
 import pandas as pd
-import psycopg2
 import PyPDF2
 import pdfplumber
 import re
-import ast
-import json
 from sqlalchemy import create_engine,text,inspect
 from configparser import ConfigParser
 
@@ -116,9 +113,17 @@ class DataImporter:
         
         try:
             tables = []
+            all_text = ""
+            table_regions = []
+            
             with pdfplumber.open(file_path) as pdf:
                 print(f"PDF has {len(pdf.pages)} pages")
                 for page_idx, page in enumerate(pdf.pages):
+                    # Extract all text from the page
+                    page_text = page.extract_text()
+                    if page_text:
+                        all_text += f"\n--- Page {page_idx+1} ---\n{page_text}\n"
+                    
                     page_tables = page.extract_tables()
                     print(f"Page {page_idx+1}: found {len(page_tables)} tables")
                     for table_idx, table in enumerate(page_tables):
@@ -128,8 +133,17 @@ class DataImporter:
                             df = pd.DataFrame(data, columns=headers)
                             tables.append(df)
                             print(f"  Table {table_idx+1}: {len(data)} rows, {len(headers)} columns")
+                            
+                            # Track table content for removal from free text
+                            table_text = '\n'.join(['\t'.join(str(cell) if cell else '' for cell in row) for row in table])
+                            table_regions.append(table_text)
                         else:
                             print(f"  Table {table_idx+1}: Empty or invalid table structure")
+                
+                # Extract and save non-table text
+                if all_text.strip():
+                    non_table_text = self._extract_non_table_text(all_text, table_regions)
+                    self._save_extracted_text(file_path, non_table_text)
                 
                 if tables:
                     print(f"Extracted {len(tables)} tables from PDF")
@@ -147,7 +161,12 @@ class DataImporter:
             with open(file_path, 'rb') as file:
                 pdf_reader = PyPDF2.PdfReader(file)
                 for page_num in range(len(pdf_reader.pages)):
-                    text += pdf_reader.pages[page_num].extract_text()
+                    page_text = pdf_reader.pages[page_num].extract_text()
+                    text += f"\n--- Page {page_num+1} ---\n{page_text}\n"
+            
+            # Save extracted text even if no tables found
+            if text.strip():
+                self._save_extracted_text(file_path, text)
                     
             # Very basic parsing - this would need customization for your PDF format
             lines = text.split('\n')
@@ -167,6 +186,125 @@ class DataImporter:
         except Exception as e:
             print(f"PDF extraction failed: {e}")
             return []  # Empty list when extraction fails
+
+    def _extract_non_table_text(self, full_text, table_regions):
+        """Extract non-table text by removing table content"""
+        non_table_text = full_text
+        
+        # Remove table content from the full text (basic approach)
+        for table_text in table_regions:
+            lines_to_remove = table_text.split('\n')
+            for line in lines_to_remove:
+                if line.strip():
+                    non_table_text = non_table_text.replace(line, '')
+        
+        # Advanced table pattern removal
+        non_table_text = self._remove_table_patterns(non_table_text)
+        
+        # Clean up the text
+        return self._clean_extracted_text(non_table_text)
+
+    def _remove_table_patterns(self, text):
+        """Remove table-like patterns from text"""
+        import re
+        
+        lines = text.split('\n')
+        filtered_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Skip empty lines
+            if not line:
+                continue
+            
+            # Skip lines that look like table headers
+            if re.match(r'^(Scientific Name|Species|Class|Family|Locality|Kingdom|Fishing Region|Depth Range|Lifespan|Diet Type)', line, re.IGNORECASE):
+                continue
+            
+            # Skip lines with structured fish data patterns
+            if re.match(r'^Fish_\d+_\d+\s+Species_\d+\s+Class_\d+', line):
+                continue
+            
+            # Skip lines with multiple tab-separated scientific values
+            parts = line.split()
+            if len(parts) >= 5:
+                # Check if it matches fish data pattern (Fish_X_Y Species_X Class_X Family_X...)
+                if (len(parts) >= 8 and 
+                    parts[0].startswith('Fish_') and 
+                    parts[1].startswith('Species_') and 
+                    parts[2].startswith('Class_')):
+                    continue
+                
+                # Check if line has multiple "Animalia" or similar taxonomic terms
+                if parts.count('Animalia') > 0 and any(part.startswith(('Region_', 'Locality_', 'Family_')) for part in parts):
+                    continue
+                
+                # Check if line has depth measurements and diet types
+                has_depth = any(part.endswith('m') and part[:-1].replace('.', '').isdigit() for part in parts)
+                has_diet = any(part in ['Carnivore', 'Herbivore', 'Omnivore', 'Planktivore'] for part in parts)
+                if has_depth and has_diet:
+                    continue
+            
+            # Skip lines that are mostly repetitive keywords
+            words = line.split()
+            if len(words) > 5:
+                unique_words = set(words)
+                # If more than 70% of words are repeated, it's likely table-related filler text
+                if len(unique_words) / len(words) < 0.3:
+                    # Check if these are table-related keywords
+                    table_keywords = {'fish', 'species', 'habitat', 'ocean', 'sea', 'river', 'lake', 'marine', 'freshwater', 'migration', 'ecosystem'}
+                    if len(unique_words.intersection(table_keywords)) / len(unique_words) > 0.5:
+                        continue
+            
+            # Keep lines that appear to be descriptive text
+            filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines)
+
+    def _clean_extracted_text(self, text):
+        """Clean and format extracted text"""
+        import re
+        
+        # Remove excessive whitespace and empty lines
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if line and line not in cleaned_lines:  # Remove duplicates
+                cleaned_lines.append(line)
+        
+        # Join lines and clean up spacing
+        cleaned_text = '\n'.join(cleaned_lines)
+        
+        # Remove multiple consecutive newlines
+        cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
+        
+        return cleaned_text
+
+    def _save_extracted_text(self, pdf_path, extracted_text):
+        """Save extracted text to a file"""
+        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        
+        # Create extracted_text folder if it doesn't exist
+        extracted_text_folder = "extracted_text"
+        if not os.path.exists(extracted_text_folder):
+            os.makedirs(extracted_text_folder)
+        
+        # Use original PDF name for the text file
+        text_file_path = os.path.join(extracted_text_folder, f"{base_name}.txt")
+        
+        try:
+            with open(text_file_path, 'w', encoding='utf-8') as f:
+                f.write(f"Extracted text from: {pdf_path}\n")
+                f.write("=" * 50 + "\n\n")
+                f.write(extracted_text)
+            
+            print(f"📝 Saved extracted text to: {text_file_path}")
+            
+        except Exception as e:
+            print(f"Error saving extracted text: {e}")
             
     def detect_and_fix_data_misalignment(self, df, table_name):
         """Detect if data is misaligned with column headers and attempt to fix it"""

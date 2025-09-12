@@ -3,19 +3,7 @@ import pandas as pd
 from file_to_postgres import best_table_match
 
 def determine_pdf_table_type(table_df, schemas, pk_synonyms):
-    """
-    Determines the most appropriate table type for any table data.
-    Works for tables extracted from PDFs, CSVs, Excel files, or any DataFrame.
-    Uses multiple detection methods for better accuracy.
-    
-    Args:
-        table_df: pandas DataFrame containing the table data
-        schemas: Dictionary of schemas for each table type
-        pk_synonyms: Dictionary of primary key synonyms
-        
-    Returns:
-        str: Table type name (e.g., 'fish', 'oceanography', 'edna') or None if no match
-    """
+   
     if table_df is None or table_df.empty:
         return None
         
