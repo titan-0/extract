@@ -18,6 +18,8 @@ fish = Table(
     Column("class", String(100)),
     Column("family", String(100)),
     Column("location", Geography(geometry_type='POINT', srid=4326)),  # 🌍 single column
+    Column("location_lat", Float),  # Latitude coordinate
+    Column("location_lng", Float),  # Longitude coordinate
     Column("locality", String(200)),
     Column("kingdom", String(100)),
     Column("fishing_region", String(100)),
@@ -37,6 +39,8 @@ oceanography = Table(
     Column("data_set", String(100)),
     Column("version", String(50)),
     Column("location", Geography(geometry_type='POINT', srid=4326)),  # 🌍 single column
+    Column("location_lat", Float),  # Latitude coordinate
+    Column("location_lng", Float),  # Longitude coordinate
     Column("max_depth", Float),
     Column("temperature_kelvin", Float),
     Column("salinity_psu", Float),
@@ -67,6 +71,8 @@ EDNA = Table(
     Column("blast_matching", JSONB),              
     Column("sample_date", Date),                  
     Column("location", Geography(geometry_type='POINT', srid=4326)),  
+    Column("location_lat", Float),  # Latitude coordinate
+    Column("location_lng", Float),  # Longitude coordinate
     Column("collector", String),                  
     Column("sample_type", String),                # Type of sample: water, sediment, tissue
     Column("species_detected", ARRAY(String)),    # Array of detected species names

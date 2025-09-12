@@ -14,13 +14,13 @@ SUPABASE_DATABASE_URL = "postgresql://postgres.mqtghilvvxpvjnpzodkd:sianfkp63@aw
 
 # --- Table schemas from db.py ---
 FISH_COLUMNS = [
-    "scientific_name", "species", "class", "family", "location", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"
+    "scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"
 ]
 OCEANOGRAPHY_COLUMNS = [
-    "data_set", "version", "location", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"
+    "data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"
 ]
 EDNA_COLUMNS = [
-    "sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"
+    "sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "location_lat", "location_lng", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"
 ]
 
 # Helper function to determine which table a dataset belongs to
@@ -44,15 +44,15 @@ PRIMARY_KEY_SYNONYMS = {
 schemas = {
     "fish": {
         "primary_key": "scientific_name",
-        "columns": ["scientific_name", "species", "class", "family", "location", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
+        "columns": ["scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
     },
     "oceanography": {
         "primary_key": ["data_set", "version"],
-        "columns": ["data_set", "version", "location", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
+        "columns": ["data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
     },
     "edna": {
         "primary_key": "sequence_id",
-        "columns": ["sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"]
+        "columns": ["sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "location_lat", "location_lng", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"]
     }
 }
 
@@ -168,8 +168,76 @@ class DataImporter:
             print(f"PDF extraction failed: {e}")
             return []  # Empty list when extraction fails
             
+    def detect_and_fix_data_misalignment(self, df, table_name):
+        """Detect if data is misaligned with column headers and attempt to fix it"""
+        if df.empty or table_name != "fish":  # Focus on fish table for now
+            return df
+            
+        print(f"Checking data alignment for {table_name} table...")
+        
+        # Expected data patterns for fish table
+        expected_patterns = {
+            'scientific_name': lambda x: isinstance(x, str) and len(str(x)) > 2,
+            'species': lambda x: isinstance(x, str) and len(str(x)) > 2,
+            'class': lambda x: isinstance(x, str) and len(str(x)) > 2,
+            'family': lambda x: isinstance(x, str) and len(str(x)) > 2,
+            'location_lat': lambda x: isinstance(x, (int, float)) and -90 <= x <= 90,
+            'location_lng': lambda x: isinstance(x, (int, float)) and -180 <= x <= 180,
+            'locality': lambda x: isinstance(x, str) and len(str(x)) > 1,
+            'kingdom': lambda x: isinstance(x, str) and str(x).lower() in ['animalia', 'animal'],
+            'fishing_region': lambda x: isinstance(x, str),
+            'depth_range': lambda x: isinstance(x, str) or isinstance(x, (int, float)),
+            'lifespan_years': lambda x: isinstance(x, (int, float)) and 0 < x < 200,
+            'migration_patterns': lambda x: isinstance(x, str),
+        }
+        
+        # Check first row for obvious misalignments
+        if len(df) > 0:
+            first_row = df.iloc[0]
+            misalignments = []
+            
+            for col, value in first_row.items():
+                if col in expected_patterns:
+                    if not expected_patterns[col](value):
+                        misalignments.append((col, value, type(value).__name__))
+            
+            if misalignments:
+                print(f"Detected potential data misalignments:")
+                for col, val, val_type in misalignments:
+                    print(f"  {col}: {val} ({val_type}) - doesn't match expected pattern")
+                
+                # Try to auto-correct based on the known correct order
+                # Based on the error, the correct order should be:
+                correct_order = [
+                    'scientific_name', 'species', 'class', 'family', 'location_lat', 
+                    'location_lng', 'locality', 'kingdom', 'fishing_region', 
+                    'depth_range', 'lifespan_years', 'migration_patterns', 'synonyms',
+                    'reproductive_type', 'habitat_type', 'phylum', 'diet_type'
+                ]
+                
+                current_columns = list(df.columns)
+                
+                # If we have the same number of columns, try remapping
+                if len(current_columns) == len(correct_order):
+                    print("Attempting to fix column alignment...")
+                    
+                    # Create a new dataframe with corrected column mapping
+                    corrected_df = pd.DataFrame()
+                    for i, correct_col in enumerate(correct_order):
+                        if i < len(current_columns):
+                            corrected_df[correct_col] = df.iloc[:, i]  # Use positional mapping
+                    
+                    print("Data alignment corrected!")
+                    return corrected_df
+        
+        return df
+
     def map_columns(self, df, table_name):
         """Map dataframe columns to Supabase table columns, using synonyms for primary key and other columns"""
+        
+        # First attempt to detect and fix data misalignment
+        df = self.detect_and_fix_data_misalignment(df, table_name)
+        
         # Use schemas from db.py
         table_columns = {
             "fish": FISH_COLUMNS,
@@ -187,6 +255,9 @@ class DataImporter:
                 "species": ["species", "common_name", "Species", "common name", "Common Name"],
                 "class": ["class", "Class", "classification"],
                 "family": ["family", "Family", "family_name"],
+                "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place"],
+                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord"],
+                "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long"],
                 "diet_type": ["diet_type", "Diet Type", "diet", "feeding_type", "Diet"],
                 "lifespan_years": ["lifespan_years", "Lifespan (yrs)", "lifespan", "life_expectancy", "age"],
                 "depth_range": ["depth_range", "Depth Range", "depth", "water_depth"],
@@ -194,12 +265,42 @@ class DataImporter:
                 "habitat_type": ["habitat_type", "Habitat Type", "habitat", "environment", "ecosystem"]
             },
             "oceanography": {
-                "data_set": ["data_set", "dataset", "data_set_id", "data collection", "Data Set"],
-                "version": ["version", "ver", "v", "Version", "revision"],
+                "data_set": ["data_set", "dataset", "data_set_id", "data collection", "Data Set", "survey", "cruise", "expedition", "campaign", "project", "study"],
+                "version": ["version", "ver", "v", "Version", "revision", "release", "update", "data_version"],
+                "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place", "station", "sampling_site"],
+                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord", "station_lat"],
+                "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long", "station_lng"],
+                "max_depth": ["max_depth", "maximum_depth", "depth_max", "bottom_depth", "water_depth", "depth", "bathymetry", "depth_m"],
+                "temperature_kelvin": ["temperature_kelvin", "temperature", "temp", "temp_k", "kelvin", "water_temp", "sea_temp", "temperature_k"],
+                "salinity_psu": ["salinity_psu", "salinity", "sal", "psu", "salt", "salt_content", "practical_salinity", "salinity_practical"],
+                "dissolved_oxygen": ["dissolved_oxygen", "oxygen", "o2", "do", "dissolved_o2", "oxygen_content", "oxygen_mg_l", "oxygen_concentration"],
+                "ph": ["ph", "pH", "acidity", "hydrogen_ion", "ph_level", "ph_value"],
+                "chlorophyll_mg_m3": ["chlorophyll_mg_m3", "chlorophyll", "chl", "chl_a", "chlorophyll_a", "phytoplankton", "chl_mg_m3", "chlorophyll_concentration"],
+                "nutrients": ["nutrients", "nutrition", "nutrient_content", "mineral_content", "chemical_composition", "nutrients_json"],
+                "pressure_bar": ["pressure_bar", "pressure", "press", "bar", "water_pressure", "hydrostatic_pressure", "pressure_dbar"],
+                "density_kg_m3": ["density_kg_m3", "density", "water_density", "seawater_density", "rho", "density_kg", "specific_gravity"],
+                "turbidity": ["turbidity", "cloudiness", "clarity", "suspended_particles", "turbidity_ntu", "water_clarity"],
+                "alkalinity": ["alkalinity", "alk", "total_alkalinity", "carbonate_alkalinity", "buffering_capacity"],
+                "surface_currents": ["surface_currents", "currents", "current_speed", "flow", "water_flow", "current_velocity", "surface_flow"]
             },
             "edna": {
-                "sequence_id": ["sequence_id", "seq_id", "sequence", "id", "dna_id", "Sequence ID"],
-                "dna_sequence": ["dna_sequence", "sequence", "dna", "DNA Sequence", "genetic_sequence"],
+                "sequence_id": ["sequence_id", "seq_id", "sequence", "id", "dna_id", "Sequence ID", "accession", "accession_number", "sequence_identifier"],
+                "dna_sequence": ["dna_sequence", "sequence", "dna", "DNA Sequence", "genetic_sequence", "nucleotides", "bases", "genomic_sequence", "amplicon"],
+                "description": ["description", "desc", "sample_description", "sequence_description", "annotation", "comments", "details"],
+                "blast_matching": ["blast_matching", "blast", "blast_match", "blast_result", "blast_hit", "sequence_similarity", "database_match", "homology"],
+                "sample_date": ["sample_date", "date", "collection_date", "sampling_date", "date_collected", "date_of_collection", "timestamp", "collection_time"],
+                "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place", "sampling_site", "collection_site"],
+                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord", "sampling_lat"],
+                "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long", "sampling_lng"],
+                "collector": ["collector", "collected_by", "sampler", "researcher", "scientist", "field_collector", "person"],
+                "sample_type": ["sample_type", "type", "sample_category", "material", "substrate", "medium", "sample_kind"],
+                "species_detected": ["species_detected", "species", "organisms", "taxa", "detected_species", "identified_species", "species_list"],
+                "quality_score": ["quality_score", "quality", "score", "q_score", "confidence", "reliability", "quality_rating"],
+                "status": ["status", "state", "condition", "processing_status", "sample_status", "analysis_status"],
+                "qr_code_link": ["qr_code_link", "qr_code", "qr", "barcode", "identifier_code", "sample_code", "tracking_code"],
+                "reference_link": ["reference_link", "reference", "ref", "link", "url", "external_link", "source_link"],
+                "project": ["project", "study", "research_project", "project_name", "investigation", "program"],
+                "notes": ["notes", "remarks", "comments", "observations", "additional_info", "memo", "footnotes"]
             }
         }
         
@@ -239,34 +340,117 @@ class DataImporter:
                 new_df[db_col] = pd.NA
         return new_df
 
-    def fix_special_columns(self, df, table_name):
-        """Convert array, enum, and JSON columns to correct types for Supabase"""
-        import json
-        import ast
-        if table_name == "fish":
-            if "location" in df.columns:
-                # If value is NaN or empty, set to None
-                df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
-            if "synonyms" in df.columns:
-                def to_pg_array(x):
-                    if pd.isna(x) or str(x).strip() == "":
+    def process_location_columns(self, df):
+        """Handle conversions between location point format and separate lat/lng columns"""
+        import re
+        
+        # Check if we have location column with point data but missing lat/lng
+        if "location" in df.columns and ("location_lat" not in df.columns or "location_lng" not in df.columns or 
+                                        df["location_lat"].isna().all() or df["location_lng"].isna().all()):
+            
+            def extract_coordinates_from_point(location_str):
+                """Extract lat, lng from various point formats"""
+                if pd.isna(location_str) or str(location_str).strip() == "":
+                    return None, None
+                
+                location_str = str(location_str).strip()
+                
+                # Pattern 1: POINT(lng lat) - PostGIS format
+                point_match = re.search(r'POINT\s*\(\s*([-+]?\d*\.?\d+)\s+([-+]?\d*\.?\d+)\s*\)', location_str, re.IGNORECASE)
+                if point_match:
+                    lng, lat = float(point_match.group(1)), float(point_match.group(2))
+                    return lat, lng
+                
+                # Pattern 2: [lat, lng] or (lat, lng)
+                bracket_match = re.search(r'[\[\(]\s*([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)\s*[\]\)]', location_str)
+                if bracket_match:
+                    lat, lng = float(bracket_match.group(1)), float(bracket_match.group(2))
+                    return lat, lng
+                
+                # Pattern 3: "lat,lng" or "lat, lng"
+                comma_match = re.search(r'^([-+]?\d*\.?\d+)\s*,\s*([-+]?\d*\.?\d+)$', location_str)
+                if comma_match:
+                    lat, lng = float(comma_match.group(1)), float(comma_match.group(2))
+                    return lat, lng
+                
+                # Pattern 4: "lat lng" (space separated)
+                space_match = re.search(r'^([-+]?\d*\.?\d+)\s+([-+]?\d*\.?\d+)$', location_str)
+                if space_match:
+                    lat, lng = float(space_match.group(1)), float(space_match.group(2))
+                    return lat, lng
+                
+                return None, None
+            
+            # Extract coordinates from location column
+            coords = df["location"].apply(extract_coordinates_from_point)
+            
+            # Create or update lat/lng columns
+            if "location_lat" not in df.columns:
+                df["location_lat"] = pd.NA
+            if "location_lng" not in df.columns:
+                df["location_lng"] = pd.NA
+            
+            # Fill missing lat/lng values
+            for idx, (lat, lng) in enumerate(coords):
+                if lat is not None and lng is not None:
+                    if pd.isna(df.loc[idx, "location_lat"]):
+                        df.loc[idx, "location_lat"] = lat
+                    if pd.isna(df.loc[idx, "location_lng"]):
+                        df.loc[idx, "location_lng"] = lng
+        
+        # Check if we have lat/lng but missing location point
+        if ("location_lat" in df.columns and "location_lng" in df.columns and 
+            not df["location_lat"].isna().all() and not df["location_lng"].isna().all()):
+            
+            def create_point_from_coords(lat, lng):
+                """Create POINT(lng lat) format from coordinates"""
+                if pd.isna(lat) or pd.isna(lng):
+                    return None
+                try:
+                    lat_float = float(lat)
+                    lng_float = float(lng)
+                    # Validate coordinate ranges
+                    if -90 <= lat_float <= 90 and -180 <= lng_float <= 180:
+                        return f"POINT({lng_float} {lat_float})"
+                    else:
+                        print(f"Warning: Invalid coordinates lat={lat_float}, lng={lng_float}")
                         return None
-                    if isinstance(x, list):
-                                return "{" + ",".join(map(str, x)) + "}"
-                    if isinstance(x, str):
-            # Convert semicolon or comma separated string to PG array
-                        items = [item.strip() for item in re.split(r"[;,]", x) if item.strip()]
-                        return "{" + ",".join(items) + "}"
-                    return x
-                df["synonyms"] = df["synonyms"].apply(to_pg_array)
+                except (ValueError, TypeError):
+                    return None
+            
+            # Create or update location column
+            if "location" not in df.columns:
+                df["location"] = pd.NA
+            
+            # Fill missing location values
+            for idx in df.index:
+                if pd.isna(df.loc[idx, "location"]) or str(df.loc[idx, "location"]).strip() == "":
+                    lat = df.loc[idx, "location_lat"]
+                    lng = df.loc[idx, "location_lng"]
+                    point = create_point_from_coords(lat, lng)
+                    if point:
+                        df.loc[idx, "location"] = point
+        
+        # Convert lat/lng to numeric if they exist
+        if "location_lat" in df.columns:
+            df["location_lat"] = pd.to_numeric(df["location_lat"], errors='coerce')
+        if "location_lng" in df.columns:
+            df["location_lng"] = pd.to_numeric(df["location_lng"], errors='coerce')
+
     def fix_special_columns(self, df, table_name):
         """Convert array, enum, and JSON columns to correct types for Supabase"""
         import json
         import ast
+        import re
+        
+        # Handle location conversions for all table types
+        self.process_location_columns(df)
+        
         if table_name == "fish":
             if "location" in df.columns:
                 # If value is NaN or empty, set to None
                 df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
+                
             if "synonyms" in df.columns:
                 def to_pg_array(x):
                     if pd.isna(x) or str(x).strip() == "":
@@ -293,6 +477,10 @@ class DataImporter:
                     # Convert to lowercase and clean up
                     df[enum_col] = df[enum_col].apply(lambda x: str(x).strip().lower() if not pd.isna(x) else x)
         elif table_name == "oceanography":
+            if "location" in df.columns:
+                # If value is NaN or empty, set to None
+                df["location"] = df["location"].apply(lambda x: None if pd.isna(x) or str(x).strip() == "" else x)
+                
             if "nutrients" in df.columns:
                 df["nutrients"] = df["nutrients"].apply(lambda x: json.dumps(x) if isinstance(x, dict) else (json.dumps(ast.literal_eval(x)) if isinstance(x, str) and x.startswith("{") else x))
         elif table_name == "edna":

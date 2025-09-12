@@ -14,15 +14,15 @@ PRIMARY_KEY_SYNONYMS = {
 schemas = {
     "fish": {
         "primary_key": "scientific_name",
-        "columns": ["scientific_name", "species", "class", "family", "location", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
+        "columns": ["scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
     },
     "oceanography": {
         "primary_key": ["data_set", "version"],
-        "columns": ["data_set", "version", "location", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
+        "columns": ["data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
     },
     "edna": {
         "primary_key": "sequence_id",
-        "columns": ["sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"]
+        "columns": ["sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "location_lat", "location_lng", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"]
     }
 }
 
