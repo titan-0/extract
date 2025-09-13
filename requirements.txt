@@ -5,3 +5,6 @@ tabula-py
 SQLAlchemy
 openpyxl
 pdfplumber
+fastapi
+uvicorn
+requests

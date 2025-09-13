@@ -27,10 +27,10 @@ fish = Table(
     Column("lifespan_years", Float),
     Column("migration_patterns", String(200)),
     Column("synonyms", ARRAY(String)),  # multiple synonyms
-    Column("reproductive_type", Enum("Oviparous", "Viviparous", "Ovoviviparous", name="reproductive_type_enum"),nullable=True,default=None),
-    Column("habitat_type", Enum("Freshwater", "Marine", "Brackish", "Estuarine", name="habitat_type_enum"),nullable=True,default=None),
+    Column("reproductive_type", Enum("oviparous", "viviparous", "ovoviviparous", name="reproductive_type_enum"),nullable=True,default=None),
+    Column("habitat_type", Enum("freshwater", "marine", "brackish", "estuarine", "benthic", "planktonic", "nektonic", "demersal", "mesopelagic", name="habitat_type_enum"),nullable=True,default=None),
     Column("phylum", String(100)),
-    Column("diet_type", Enum("Carnivore", "Herbivore", "Omnivore", "Planktivore", "Detritivore", name="diet_type_enum"),nullable=True,default=None),
+    Column("diet_type", Enum("carnivore", "herbivore", "omnivore", "planktivore", "detritivore", name="diet_type_enum"),nullable=True,default=None),
 )
 
 # Oceanography table with location as geography(Point)

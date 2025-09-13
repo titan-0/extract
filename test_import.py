@@ -63,84 +63,93 @@ test_cases = []
 
 def runn():
     for fname in os.listdir("test_files"):
-        fpath = os.path.join("test_files", fname)
-        _, extension = os.path.splitext(fname)
-        extension = extension.lower()
-   
+        try:
+            fpath = os.path.join("test_files", fname)
+            _, extension = os.path.splitext(fname)
+            extension = extension.lower()
+    
     # Use common handling for all file types
-        if extension in ['.csv', '.xlsx', '.xls', '.txt']:
-            print(f"Processing file: {fname}")
-            df = importer.read_file(fpath)
-        
-        # Use the PDF table helper for all file types for more accurate detection
-            table_name = determine_pdf_table_type(df, schemas, PRIMARY_KEY_SYNONYMS)
-        
-            if table_name:
-                print(f"File: {fname}, detected as: {table_name} table")
-                success = importer.import_to_db(df, table_name)
-                if success:
-                    print(f"✅ Successfully imported {fname} into {table_name}")
-                else:
-                    print(f"❌ Failed to import {fname} into {table_name}")
-            else:
-            # Fallback to best_table_match if determine_pdf_table_type couldn't identify
-                columns = list(df.columns)
-                print(f"File: {fname}, Columns: {columns}")
-                table_name = best_table_match(columns, schemas, PRIMARY_KEY_SYNONYMS)
-                print("Falling back to best_table_match. Most likely table:", table_name)
-            
+            if extension in ['.csv', '.xlsx', '.xls', '.txt']:
+                print(f"Processing file: {fname}")
+                df = importer.read_file(fpath)
+
+            # Use the PDF table helper for all file types for more accurate detection
+                table_name = determine_pdf_table_type(df, schemas, PRIMARY_KEY_SYNONYMS)
+
                 if table_name:
-                    importer.import_to_db(df, table_name)
-                else:
-                    print(f"❌ Could not determine target table for {fname}")
-    
-    # Special handling for PDF files to show and process all tables
-        if extension == '.pdf':
-            print(f"Processing PDF file: {fname}")
-            pdf_tables = importer.read_pdf(fpath)
-            if pdf_tables:
-                print(f"\nFound {len(pdf_tables)} tables in {fname}:")
-            
-            # Process each table in the PDF
-                for i, table_df in enumerate(pdf_tables):
-                    print(f"\n--- Table {i+1} Preview ---")
-                    print(table_df.head())
-                
-                # Try to determine table type for each individual table using our helper
-                    current_table_type = determine_pdf_table_type(table_df, schemas, PRIMARY_KEY_SYNONYMS)
-                
-                    if current_table_type:
-                        print(f"Table {i+1} identified as: {current_table_type} table")
-                
-                    if current_table_type:
-                        print(f"Importing table {i+1} into {current_table_type}")
-                    
-                    # Process this specific table
-                        success = importer.import_to_db(table_df, current_table_type)
-                        if success:
-                            print(f"✅ Successfully imported table {i+1} from {fname} into {current_table_type}")
-                        else:
-                            print(f"❌ Failed to import table {i+1} from {fname} into {current_table_type}")
+                    print(f"File: {fname}, detected as: {table_name} table")
+                    success = importer.import_to_db(df, table_name)
+                    if success:
+                        print(f"✅ Successfully imported {fname} into {table_name}")
                     else:
-                        print(f"❌ Could not determine target table for table {i+1} in {fname}")
-            
-            # Set flag to skip the general import logic since we've handled it here
-                skip_general_import = True
-            
+                        print(f"❌ Failed to import {fname} into {table_name}")
+                else:
+                # Fallback to best_table_match if determine_pdf_table_type couldn't identify
+                    columns = list(df.columns)
+                    print(f"File: {fname}, Columns: {columns}")
+                    table_name = best_table_match(columns, schemas, PRIMARY_KEY_SYNONYMS)
+                    print("Falling back to best_table_match. Most likely table:", table_name)
+
+                    if table_name:
+                        importer.import_to_db(df, table_name)
+                    else:
+                        print(f"❌ Could not determine target table for {fname}")
+
+    # Special handling for PDF files to show and process all tables
+            elif extension == '.pdf':
+                print(f"Processing PDF file: {fname}")
+                pdf_tables = importer.read_pdf(fpath)
+                if pdf_tables:
+                    print(f"\nFound {len(pdf_tables)} tables in {fname}:")
+
+                # Process each table in the PDF
+                    for i, table_df in enumerate(pdf_tables):
+                        print(f"\n--- Table {i+1} Preview ---")
+                        print(table_df.head())
+
+                    # Try to determine table type for each individual table using our helper
+                        current_table_type = determine_pdf_table_type(table_df, schemas, PRIMARY_KEY_SYNONYMS)
+
+                        if current_table_type:
+                            print(f"Table {i+1} identified as: {current_table_type} table")
+
+                        if current_table_type:
+                            print(f"Importing table {i+1} into {current_table_type}")
+
+                        # Process this specific table
+                            success = importer.import_to_db(table_df, current_table_type)
+                            if success:
+                                print(f"✅ Successfully imported table {i+1} from {fname} into {current_table_type}")
+                            else:
+                                print(f"❌ Failed to import table {i+1} from {fname} into {current_table_type}")
+                        else:
+                            print(f"❌ Could not determine target table for table {i+1} in {fname}")
+
+                # Set flag to skip the general import logic since we've handled it here
+                    skip_general_import = True
+
+                else:
+                    print("No valid tables found in PDF")
+                    continue  # Skip to next file
             else:
-                print("No valid tables found in PDF")
-                continue  # Skip to next file
-    
-        
+                print(f"Unsupported file type: {extension}. Skipping.")
+                continue 
+                
     # Move processed file to test_files2 directory
     # Create the directory if it doesn't exist
-        os.makedirs("test_files2", exist_ok=True)
-        src = fpath
-        dst = os.path.join("test_files2", fname)
-        os.rename(src, dst)
-
+            os.makedirs("test_files2", exist_ok=True)
+            src = fpath
+            dst = os.path.join("test_files2", fname)
+            os.rename(src, dst)
+        
+        except Exception as e: 
+            print(f"🚨 CRITICAL ERROR processing {fname}: {e}")
+            print("Skipping to the next file.")
+            continue 
 
 importer.close()
+
+runn()
 
 
 

@@ -394,11 +394,11 @@ class DataImporter:
                 "class": ["class", "Class", "classification"],
                 "family": ["family", "Family", "family_name"],
                 "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place"],
-                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord"],
+                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord","decimalLatitude","decimalLongitude"],
                 "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long"],
                 "diet_type": ["diet_type", "Diet Type", "diet", "feeding_type", "Diet"],
                 "lifespan_years": ["lifespan_years", "Lifespan (yrs)", "lifespan", "life_expectancy", "age"],
-                "depth_range": ["depth_range", "Depth Range", "depth", "water_depth"],
+                "depth_range": ["depth_range", "Depth Range", "depth", "water_depth","maximumDepthInMeters"],
                 "reproductive_type": ["reproductive_type", "Reproductive Type", "reproduction", "repro_type", "breeding"],
                 "habitat_type": ["habitat_type", "Habitat Type", "habitat", "environment", "ecosystem"]
             },
@@ -659,7 +659,7 @@ class DataImporter:
                 elif column_name == "reproductive_type":
                     return ["oviparous", "viviparous", "ovoviviparous"]
                 elif column_name == "habitat_type":
-                    return ["freshwater", "marine", "brackish", "estuarine"]
+                    return ["freshwater", "marine", "brackish", "estuarine","benthic", "planktonic", "nektonic", "demersal", "mesopelagic"]
                 
                 return []
         except Exception as e:
@@ -698,15 +698,19 @@ class DataImporter:
                     print(f"Warning: Could not fetch valid values for {col}, skipping validation")
                     continue
                     
-                # Check if values are valid
-                invalid_mask = ~df[col].isin(valid_values)
-                invalid_values = df.loc[invalid_mask, col].unique()
-                
-                if len(invalid_values) > 0:
-                    print(f"Invalid {col} values found: {invalid_values}")
-                    print(f"Valid values are: {valid_values}")
-                    # Remove invalid rows
-                    df = df[~invalid_mask]
+                # Check if values are valid (excluding null/NA values since columns are nullable)
+                non_null_mask = df[col].notna() & (df[col] != '<NA>') & (df[col] != 'nan')
+                if non_null_mask.any():
+                    non_null_values = df.loc[non_null_mask, col]
+                    invalid_mask = ~non_null_values.isin(valid_values)
+                    invalid_values = non_null_values[invalid_mask].unique()
+                    
+                    if len(invalid_values) > 0:
+                        print(f"Invalid {col} values found: {invalid_values}")
+                        print(f"Valid values are: {valid_values}")
+                        # Remove only rows with invalid non-null values
+                        full_invalid_mask = non_null_mask & ~df[col].isin(valid_values)
+                        df = df[~full_invalid_mask]
                 
         return df
 
@@ -754,3 +758,4 @@ class DataImporter:
             print("Database connection closed")
 
 
+# https://api.obis.org/v3/occurrence
