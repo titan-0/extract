@@ -6,19 +6,19 @@ import os
 
 # ...existing code...
 PRIMARY_KEY_SYNONYMS = {
-    "fish": ["scientific_name", "sci_name", "species_name", "fish_name","scientificName"],
+    "fish": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName"],
     "oceanography": ["data_set", "dataset", "data_set_id", "version", "ver", "data_version"],
     "edna": ["sequence_id", "seq_id", "sequence", "id", "dna_id"]
 }
 
 schemas = {
     "fish": {
-        "primary_key": "scientific_name",
-        "columns": ["scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
+        "primary_key": "scientificName",
+        "columns": ["scientificName", "species", "class", "family", "location", "decimalLatitude", "decimalLongitude", "locality", "kingdom", "fishing_region", "maximumDepthInMeters", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat", "phylum", "diet_type"]
     },
     "oceanography": {
         "primary_key": ["data_set", "version"],
-        "columns": ["data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
+        "columns": ["data_set", "version", "location", "decimalLatitude", "decimalLongitude", "maximumDepthInMeters", "waterTemperature", "salinity", "dissolvedOxygen", "water_pH", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents", "measurement_date"]
     },
     "edna": {
         "primary_key": "sequence_id",
@@ -62,12 +62,17 @@ def get_column_names(file_path):
 test_cases = []
 
 def runn():
+    import random
+    
     for fname in os.listdir("test_files"):
         try:
             fpath = os.path.join("test_files", fname)
             _, extension = os.path.splitext(fname)
             extension = extension.lower()
-    
+            
+            # Create data source for this file once
+            data_source_id = None
+            
     # Use common handling for all file types
             if extension in ['.csv', '.xlsx', '.xls', '.txt']:
                 print(f"Processing file: {fname}")
@@ -78,7 +83,29 @@ def runn():
 
                 if table_name:
                     print(f"File: {fname}, detected as: {table_name} table")
-                    success = importer.import_to_db(df, table_name)
+                    
+                    # Create data source once per file for tables that need it
+                    if table_name in ['fish', 'oceanography'] and data_source_id is None:
+                        # Generate random description
+                        descriptions = [
+                            f"Marine biology data imported from {fname}",
+                            f"Oceanographic dataset from {fname}",
+                            f"Scientific research data extracted from {fname}",
+                            f"Biological survey data from {fname}",
+                            f"Marine species database from {fname}",
+                            f"Field research data imported from {fname}",
+                            f"Environmental monitoring data from {fname}",
+                            f"Marine ecosystem data from {fname}",
+                            f"Scientific collection data from {fname}",
+                            f"Research dataset imported from {fname}"
+                        ]
+                        description = random.choice(descriptions)
+                        # Remove extension from filename for data source name
+                        filename_without_ext = os.path.splitext(fname)[0]
+                        data_source_id = importer.get_or_create_data_source(filename_without_ext, description)
+                        print(f"Created/found data source ID: {data_source_id} for {fname}")
+                    
+                    success = importer.import_to_db(df, table_name, data_source_id)
                     if success:
                         print(f"✅ Successfully imported {fname} into {table_name}")
                     else:
@@ -91,7 +118,28 @@ def runn():
                     print("Falling back to best_table_match. Most likely table:", table_name)
 
                     if table_name:
-                        importer.import_to_db(df, table_name)
+                        # Create data source once per file for tables that need it
+                        if table_name in ['fish', 'oceanography'] and data_source_id is None:
+                            # Generate random description
+                            descriptions = [
+                                f"Marine biology data imported from {fname}",
+                                f"Oceanographic dataset from {fname}",
+                                f"Scientific research data extracted from {fname}",
+                                f"Biological survey data from {fname}",
+                                f"Marine species database from {fname}",
+                                f"Field research data imported from {fname}",
+                                f"Environmental monitoring data from {fname}",
+                                f"Marine ecosystem data from {fname}",
+                                f"Scientific collection data from {fname}",
+                                f"Research dataset imported from {fname}"
+                            ]
+                            description = random.choice(descriptions)
+                            # Remove extension from filename for data source name
+                            filename_without_ext = os.path.splitext(fname)[0]
+                            data_source_id = importer.get_or_create_data_source(filename_without_ext, description)
+                            print(f"Created/found data source ID: {data_source_id} for {fname}")
+                        
+                        importer.import_to_db(df, table_name, data_source_id)
                     else:
                         print(f"❌ Could not determine target table for {fname}")
 
@@ -112,12 +160,32 @@ def runn():
 
                         if current_table_type:
                             print(f"Table {i+1} identified as: {current_table_type} table")
+                            
+                            # Create data source once per file for tables that need it
+                            if current_table_type in ['fish', 'oceanography'] and data_source_id is None:
+                                # Generate random description
+                                descriptions = [
+                                    f"Marine biology data imported from {fname}",
+                                    f"Oceanographic dataset from {fname}",
+                                    f"Scientific research data extracted from {fname}",
+                                    f"Biological survey data from {fname}",
+                                    f"Marine species database from {fname}",
+                                    f"Field research data imported from {fname}",
+                                    f"Environmental monitoring data from {fname}",
+                                    f"Marine ecosystem data from {fname}",
+                                    f"Scientific collection data from {fname}",
+                                    f"Research dataset imported from {fname}"
+                                ]
+                                description = random.choice(descriptions)
+                                # Remove extension from filename for data source name
+                                filename_without_ext = os.path.splitext(fname)[0]
+                                data_source_id = importer.get_or_create_data_source(filename_without_ext, description)
+                                print(f"Created/found data source ID: {data_source_id} for {fname}")
 
-                        if current_table_type:
                             print(f"Importing table {i+1} into {current_table_type}")
 
                         # Process this specific table
-                            success = importer.import_to_db(table_df, current_table_type)
+                            success = importer.import_to_db(table_df, current_table_type, data_source_id)
                             if success:
                                 print(f"✅ Successfully imported table {i+1} from {fname} into {current_table_type}")
                             else:

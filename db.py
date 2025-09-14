@@ -1,6 +1,7 @@
 from sqlalchemy import (
     create_engine, Column, String, Float, JSON,
-    Enum, MetaData, Table, PrimaryKeyConstraint,ForeignKeyConstraint,Text,Date
+    Enum, MetaData, Table, PrimaryKeyConstraint,ForeignKeyConstraint,Text,Date,UniqueConstraint,Identity,Integer,TIMESTAMP,text,Boolean,ForeignKey,Index
+    , CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import ARRAY,JSONB
 from geoalchemy2 import Geography
@@ -13,24 +14,39 @@ metadata = MetaData()
 # Fish table with location as geography(Point)
 fish = Table(
     "fish", metadata,
-    Column("scientific_name", String(150), primary_key=True),
+    Column("id", Integer, Identity(start=1, cycle=True), primary_key=True),
+    Column("scientificName", String(150), unique=True,nullable=False),
     Column("species", String(100)),
     Column("class", String(100)),
     Column("family", String(100)),
     Column("location", Geography(geometry_type='POINT', srid=4326)),  # 🌍 single column
-    Column("location_lat", Float),  # Latitude coordinate
-    Column("location_lng", Float),  # Longitude coordinate
+    Column("decimalLatitude", Float),  # Latitude coordinate
+    Column("decimalLongitude", Float),  # Longitude coordinate
     Column("locality", String(200)),
     Column("kingdom", String(100)),
     Column("fishing_region", String(100)),
-    Column("depth_range", String(50)),
-    Column("lifespan_years", Float),
+    Column("maximumDepthInMeters", String(50)),
+    Column("lifespan_years", Float,CheckConstraint("lifespan_years > 0")),
     Column("migration_patterns", String(200)),
     Column("synonyms", ARRAY(String)),  # multiple synonyms
     Column("reproductive_type", Enum("oviparous", "viviparous", "ovoviviparous", name="reproductive_type_enum"),nullable=True,default=None),
-    Column("habitat_type", Enum("freshwater", "marine", "brackish", "estuarine", "benthic", "planktonic", "nektonic", "demersal", "mesopelagic", name="habitat_type_enum"),nullable=True,default=None),
+    Column("habitat", Enum("freshwater", "marine", "brackish", "estuarine", "benthic", "planktonic", "nektonic", "demersal", "mesopelagic", name="habitat_type_enum"),nullable=True,default=None),
     Column("phylum", String(100)),
     Column("diet_type", Enum("carnivore", "herbivore", "omnivore", "planktivore", "detritivore", name="diet_type_enum"),nullable=True,default=None),
+    Column("eventDate", TIMESTAMP(timezone=True), nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=text('now()'), nullable=False),
+    Column("data_source_id", Integer, ForeignKey("data_sources.id"), nullable=False)
+)
+
+data_sources = Table(
+    "data_sources", metadata,
+    Column("id", Integer, Identity(start=1, cycle=True), primary_key=True),
+    Column("name", String(200), unique=True, nullable=False), # e.g., "NOAA Buoy 44013" or "Smith et al. 2022"
+    Column("description", Text),
+    Column("source_type", Enum("Journal Article", "Sensor Feed", "Field Observation", "Database", "Government Report", name="source_type_enum"),default="None"),
+    Column("url", String), # A link to the dataset or article
+    Column("citation", Text), # e.g., a DOI or full citation
+    Column("created_at", TIMESTAMP(timezone=True), server_default=text('now()'), nullable=False)
 )
 
 # Oceanography table with location as geography(Point)
@@ -39,24 +55,25 @@ oceanography = Table(
     Column("data_set", String(100)),
     Column("version", String(50)),
     Column("location", Geography(geometry_type='POINT', srid=4326)),  # 🌍 single column
-    Column("location_lat", Float),  # Latitude coordinate
-    Column("location_lng", Float),  # Longitude coordinate
-    Column("max_depth", Float),
-    Column("temperature_kelvin", Float),
-    Column("salinity_psu", Float),
-    Column("dissolved_oxygen", Float),
-    Column("ph", Float),
-    Column("chlorophyll_mg_m3", Float),
-    Column("nutrients", JSON),
+    Column("decimalLatitude", Float),  # Latitude coordinate
+    Column("decimalLongitude", Float),  # Longitude coordinate
+    Column("maximumDepthInMeters", Float),
+    Column("waterTemperature", Float,CheckConstraint('"waterTemperature" > 0')),
+    Column("salinity", Float,CheckConstraint("salinity > 0 AND salinity <= 40")),
+    Column("dissolvedOxygen", Float, CheckConstraint('"dissolvedOxygen" > 0')),
+    Column("water_pH", Float,CheckConstraint('"water_pH" BETWEEN 0 AND 14')),
+    Column("chlorophyll_mg_m3", Float,CheckConstraint("chlorophyll_mg_m3 > 0")),
+    Column("nutrients", JSONB),
     Column("pressure_bar", Float),
     Column("density_kg_m3", Float),
     Column("turbidity", Float),
     Column("alkalinity", Float),
     Column("surface_currents", Float),
+    Column("measurement_date", TIMESTAMP(timezone=True),nullable=True),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=text('now()'), nullable=False),
+    Column("data_source_id", Integer, ForeignKey("data_sources.id"), nullable=False),
     PrimaryKeyConstraint("data_set", "version")
 )
-
-
 
 
 
@@ -86,7 +103,15 @@ EDNA = Table(
     
 )
 
+# Index('idx_fish_location', fish.c.location, postgresql_using='gist')  # GIST index for the 'location' column in the fish table
+# Index('idx_oceanography_location', oceanography.c.location, postgresql_using='gist')  # GIST index for the 'location' column in the oceanography table
+# Index('idx_edna_location', EDNA.c.location, postgresql_using='gist')  # GIST index for the 'location' column in the eDNA table
 
+# Add additional indexes for commonly queried fields
+# Index('idx_fish_scientificName', fish.c.scientificName)  # Index for scientificName in the fish table
+# Index('idx_oceanography_measurement_date', oceanography.c.measurement_date)  # Index for measurement_date in the oceanography table
+# Index('idx_edna_sample_date', EDNA.c.sample_date)  # Index for sample_date in the eDNA table
 # Create both tables
-metadata.create_all(engine)
-# print("✅ 'fish' and 'oceanography' tables created successfully with PostGIS location column!")
+# metadata.drop_all(engine)
+metadata.create_all(engine, checkfirst=True)
+print("✅ 'fish' and 'oceanography' tables created successfully with PostGIS location column!")

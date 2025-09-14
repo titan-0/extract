@@ -11,10 +11,10 @@ SUPABASE_DATABASE_URL = "postgresql://postgres.mqtghilvvxpvjnpzodkd:sianfkp63@aw
 
 # --- Table schemas from db.py ---
 FISH_COLUMNS = [
-    "scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"
+    "scientificName", "species", "class", "family", "location", "decimalLatitude", "decimalLongitude", "locality", "kingdom", "fishing_region", "maximumDepthInMeters", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat", "phylum", "diet_type"
 ]
 OCEANOGRAPHY_COLUMNS = [
-    "data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"
+    "data_set", "version", "location", "decimalLatitude", "decimalLongitude", "maximumDepthInMeters", "waterTemperature", "salinity", "dissolvedOxygen", "water_pH", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents", "measurement_date"
 ]
 EDNA_COLUMNS = [
     "sequence_id", "dna_sequence", "description", "blast_matching", "sample_date", "location", "location_lat", "location_lng", "collector", "sample_type", "species_detected", "quality_score", "status", "qr_code_link", "reference_link", "project", "notes"
@@ -33,19 +33,19 @@ def best_table_match(columns, schemas, pk_synonyms):
     return best[0] if best[1][0] else None
 
 PRIMARY_KEY_SYNONYMS = {
-    "fish": ["scientific_name", "sci_name", "species_name", "fish_name","scientificName"],
+    "fish": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName"],
     "oceanography": ["data_set", "dataset", "data_set_id", "version", "ver", "data_version"],
     "edna": ["sequence_id", "seq_id", "sequence", "id", "dna_id"]
 }
 
 schemas = {
     "fish": {
-        "primary_key": "scientific_name",
-        "columns": ["scientific_name", "species", "class", "family", "location", "location_lat", "location_lng", "locality", "kingdom", "fishing_region", "depth_range", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat_type", "phylum", "diet_type"]
+        "primary_key": "scientificName",
+        "columns": ["scientificName", "species", "class", "family", "location", "decimalLatitude", "decimalLongitude", "locality", "kingdom", "fishing_region", "maximumDepthInMeters", "lifespan_years", "migration_patterns", "synonyms", "reproductive_type", "habitat", "phylum", "diet_type"]
     },
     "oceanography": {
         "primary_key": ["data_set", "version"],
-        "columns": ["data_set", "version", "location", "location_lat", "location_lng", "max_depth", "temperature_kelvin", "salinity_psu", "dissolved_oxygen", "ph", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents"]
+        "columns": ["data_set", "version", "location", "decimalLatitude", "decimalLongitude", "maximumDepthInMeters", "waterTemperature", "salinity", "dissolvedOxygen", "water_pH", "chlorophyll_mg_m3", "nutrients", "pressure_bar", "density_kg_m3", "turbidity", "alkalinity", "surface_currents", "measurement_date"]
     },
     "edna": {
         "primary_key": "sequence_id",
@@ -350,7 +350,7 @@ class DataImporter:
                     'scientific_name', 'species', 'class', 'family', 'location_lat', 
                     'location_lng', 'locality', 'kingdom', 'fishing_region', 
                     'depth_range', 'lifespan_years', 'migration_patterns', 'synonyms',
-                    'reproductive_type', 'habitat_type', 'phylum', 'diet_type'
+                    'reproductive_type', 'habitat', 'phylum', 'diet_type'
                 ]
                 
                 current_columns = list(df.columns)
@@ -389,37 +389,44 @@ class DataImporter:
         # Extended column synonyms for all tables
         COLUMN_SYNONYMS = {
             "fish": {
-                "scientific_name": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName", "Scientific Name"],
+                "scientificName": ["scientific_name", "sci_name", "species_name", "fish_name", "scientificName", "Scientific Name"],
                 "species": ["species", "common_name", "Species", "common name", "Common Name"],
                 "class": ["class", "Class", "classification"],
                 "family": ["family", "Family", "family_name"],
                 "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place"],
-                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord","decimalLatitude","decimalLongitude"],
-                "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long"],
-                "diet_type": ["diet_type", "Diet Type", "diet", "feeding_type", "Diet"],
+                "decimalLatitude": ["decimalLatitude", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord", "location_lat"],
+                "decimalLongitude": ["decimalLongitude", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long", "location_lng"],
+                "locality": ["locality", "Locality", "local_name", "place", "site_name"],
+                "kingdom": ["kingdom", "Kingdom", "tax_kingdom", "taxon_kingdom"],
+                "fishing_region": ["fishing_region", "Fishing Region", "region", "fishing_area", "area"],
+                "maximumDepthInMeters": ["maximumDepthInMeters", "depth", "water_depth", "minimumDepthInMeters", "depth_range", "Depth Range"],
                 "lifespan_years": ["lifespan_years", "Lifespan (yrs)", "lifespan", "life_expectancy", "age"],
-                "depth_range": ["depth_range", "Depth Range", "depth", "water_depth","maximumDepthInMeters"],
+                "migration_patterns": ["migration_patterns", "Migration Patterns", "migration", "movement"],
+                "synonyms": ["synonyms", "Synonyms", "alternative_names", "other_names"],
                 "reproductive_type": ["reproductive_type", "Reproductive Type", "reproduction", "repro_type", "breeding"],
-                "habitat_type": ["habitat_type", "Habitat Type", "habitat", "environment", "ecosystem"]
+                "habitat": ["habitat", "Habitat", "environment", "ecosystem"],
+                "phylum": ["phylum", "Phylum", "tax_phylum", "taxon_phylum"],
+                "diet_type": ["diet_type", "Diet Type", "diet", "feeding_type", "Diet"]
             },
             "oceanography": {
                 "data_set": ["data_set", "dataset", "data_set_id", "data collection", "Data Set", "survey", "cruise", "expedition", "campaign", "project", "study"],
                 "version": ["version", "ver", "v", "Version", "revision", "release", "update", "data_version"],
                 "location": ["location", "coordinates", "position", "geo_location", "geographical_location", "loc", "site", "place", "station", "sampling_site"],
-                "location_lat": ["location_lat", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord", "station_lat"],
-                "location_lng": ["location_lng", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long", "station_lng"],
-                "max_depth": ["max_depth", "maximum_depth", "depth_max", "bottom_depth", "water_depth", "depth", "bathymetry", "depth_m"],
-                "temperature_kelvin": ["temperature_kelvin", "temperature", "temp", "temp_k", "kelvin", "water_temp", "sea_temp", "temperature_k"],
-                "salinity_psu": ["salinity_psu", "salinity", "sal", "psu", "salt", "salt_content", "practical_salinity", "salinity_practical"],
-                "dissolved_oxygen": ["dissolved_oxygen", "oxygen", "o2", "do", "dissolved_o2", "oxygen_content", "oxygen_mg_l", "oxygen_concentration"],
-                "ph": ["ph", "pH", "acidity", "hydrogen_ion", "ph_level", "ph_value"],
+                "decimalLatitude": ["decimalLatitude", "lat", "latitude", "y", "coord_y", "geo_lat", "lat_coord", "station_lat", "location_lat"],
+                "decimalLongitude": ["decimalLongitude", "lng", "lon", "longitude", "x", "coord_x", "geo_lng", "lng_coord", "long", "station_lng", "location_lng"],
+                "maximumDepthInMeters": ["maximumDepthInMeters", "maximum_depth", "depth_max", "bottom_depth", "water_depth", "depth", "bathymetry", "depth_m", "max_depth"],
+                "waterTemperature": ["waterTemperature", "temperature", "temp", "temp_k", "kelvin", "water_temp", "sea_temp", "temperature_k", "temperature_kelvin"],
+                "salinity": ["salinity", "sal", "psu", "salt", "salt_content", "practical_salinity", "salinity_practical", "salinity_psu"],
+                "dissolvedOxygen": ["dissolvedOxygen", "oxygen", "o2", "do", "dissolved_o2", "oxygen_content", "oxygen_mg_l", "oxygen_concentration", "dissolved_oxygen"],
+                "water_pH": ["water_pH", "ph", "pH", "acidity", "hydrogen_ion", "ph_level", "ph_value"],
                 "chlorophyll_mg_m3": ["chlorophyll_mg_m3", "chlorophyll", "chl", "chl_a", "chlorophyll_a", "phytoplankton", "chl_mg_m3", "chlorophyll_concentration"],
                 "nutrients": ["nutrients", "nutrition", "nutrient_content", "mineral_content", "chemical_composition", "nutrients_json"],
                 "pressure_bar": ["pressure_bar", "pressure", "press", "bar", "water_pressure", "hydrostatic_pressure", "pressure_dbar"],
                 "density_kg_m3": ["density_kg_m3", "density", "water_density", "seawater_density", "rho", "density_kg", "specific_gravity"],
                 "turbidity": ["turbidity", "cloudiness", "clarity", "suspended_particles", "turbidity_ntu", "water_clarity"],
                 "alkalinity": ["alkalinity", "alk", "total_alkalinity", "carbonate_alkalinity", "buffering_capacity"],
-                "surface_currents": ["surface_currents", "currents", "current_speed", "flow", "water_flow", "current_velocity", "surface_flow"]
+                "surface_currents": ["surface_currents", "currents", "current_speed", "flow", "water_flow", "current_velocity", "surface_flow"],
+                "measurement_date": ["measurement_date", "date", "timestamp", "sampling_date", "collection_date", "obs_date", "observation_date"]
             },
             "edna": {
                 "sequence_id": ["sequence_id", "seq_id", "sequence", "id", "dna_id", "Sequence ID", "accession", "accession_number", "sequence_identifier"],
@@ -606,14 +613,18 @@ class DataImporter:
             # Set default values for missing enum columns
             if "reproductive_type" not in df.columns or df["reproductive_type"].isna().all():
                 df["reproductive_type"] = "oviparous"  # Default value (lowercase)
-            if "habitat_type" not in df.columns or df["habitat_type"].isna().all():
-                df["habitat_type"] = "marine"  # Default value (lowercase)
+            if "habitat" not in df.columns or df["habitat"].isna().all():
+                df["habitat"] = "marine"  # Default value (lowercase)
             
-            # Convert enum values to lowercase to match database
-            for enum_col in ["reproductive_type", "habitat_type", "diet_type"]:
+            # Handle NaN values in migration_patterns (string column, not enum)
+            if "migration_patterns" in df.columns:
+                df["migration_patterns"] = df["migration_patterns"].apply(lambda x: None if pd.isna(x) or str(x).lower() == 'nan' else str(x))
+            
+            # Convert enum values to lowercase and handle NaN values properly
+            for enum_col in ["reproductive_type", "habitat", "diet_type"]:
                 if enum_col in df.columns:
-                    # Convert to lowercase and clean up
-                    df[enum_col] = df[enum_col].apply(lambda x: str(x).strip().lower() if not pd.isna(x) else x)
+                    # Convert to lowercase and clean up, handle NaN values properly
+                    df[enum_col] = df[enum_col].apply(lambda x: None if pd.isna(x) or str(x).lower() == 'nan' else str(x).strip().lower())
         elif table_name == "oceanography":
             if "location" in df.columns:
                 # If value is NaN or empty, set to None
@@ -642,41 +653,20 @@ class DataImporter:
         return df
 
     def get_enum_values(self, table_name, column_name):
-        """Fetch valid enum values from the database for a given column."""
-        try:
-            query = f"SELECT t.enumlabel FROM pg_type typ JOIN pg_enum t ON t.enumtypid = typ.oid JOIN pg_attribute a ON a.atttypid = typ.oid WHERE a.attrelid = '{table_name}'::regclass AND a.attname = '{column_name}';"
-            with self.engine.connect() as conn:
-                result = conn.execute(text(query))
-                values = [row[0] for row in result]
+        if column_name == "diet_type":
+            return ["carnivore", "herbivore", "omnivore", "planktivore", "detritivore"]
+        elif column_name == "reproductive_type":
+            return ["oviparous", "viviparous", "ovoviviparous"]
+        elif column_name == "habitat":
+            return ["freshwater", "marine", "brackish", "estuarine","benthic", "planktonic", "nektonic", "demersal", "mesopelagic"]
                 
-                # Return the actual values from database if found
-                if values:
-                    return values
-                
-                # If we can't get valid values from database, provide defaults based on actual DB values
-                if column_name == "diet_type":
-                    return ["carnivore", "herbivore", "omnivore", "planktivore", "detritivore"]
-                elif column_name == "reproductive_type":
-                    return ["oviparous", "viviparous", "ovoviviparous"]
-                elif column_name == "habitat_type":
-                    return ["freshwater", "marine", "brackish", "estuarine","benthic", "planktonic", "nektonic", "demersal", "mesopelagic"]
-                
-                return []
-        except Exception as e:
-            print(f"Could not fetch enum values for {table_name}.{column_name}: {e}")
-            # Provide default values based on actual DB values (lowercase)
-            if column_name == "diet_type":
-                return ["carnivore", "herbivore", "omnivore", "planktivore", "detritivore"]
-            elif column_name == "reproductive_type":
-                return ["oviparous", "viviparous", "ovoviviparous"]
-            elif column_name == "habitat_type":
-                return ["freshwater", "marine", "brackish", "estuarine"]
-            return []
+        return []
+    
 
     def filter_valid_rows(self, df, table_name):
         """Remove rows with missing required fields and invalid enum values."""
         required_fields = {
-            "fish": ["scientific_name"],
+            "fish": ["scientificName"],
             "edna": ["sequence_id", "dna_sequence"],
             "oceanography": ["data_set", "version"]
         }.get(table_name, [])
@@ -687,7 +677,7 @@ class DataImporter:
         
         # Validate enum columns
         enum_columns = {
-            "fish": ["diet_type", "reproductive_type", "habitat_type"],
+            "fish": ["diet_type", "reproductive_type", "habitat"],
         }.get(table_name, [])
         
         for col in enum_columns:
@@ -714,7 +704,7 @@ class DataImporter:
                 
         return df
 
-    def import_to_db(self, df, table_name, if_exists='append'):
+    def import_to_db(self, df, table_name, data_source_id=None, if_exists='append'):
         """Import dataframe to Supabase table"""
         if df is None or df.empty:
             print("No data to import")
@@ -731,18 +721,55 @@ class DataImporter:
             if mapped_df.empty:
                 print(f"No valid rows to import for table '{table_name}' after filtering.")
                 return False
-                # Flexible batch upsert for all tables
-                # Detect primary key(s) from database
             
+            # Add required data_source_id for fish and oceanography tables
+            if table_name in ['fish', 'oceanography']:
+                if data_source_id:
+                    mapped_df['data_source_id'] = data_source_id
+                else:
+                    # Fallback to default data source
+                    default_source_id = self.get_or_create_data_source("Import")
+                    mapped_df['data_source_id'] = default_source_id
+            
+            # Filter to only include columns that exist in the database table
+            insp = inspect(self.engine)
+            db_columns = [col['name'] for col in insp.get_columns(table_name)]
+            
+            # Keep only columns that exist in the database
+            valid_columns = [col for col in mapped_df.columns if col in db_columns]
+            mapped_df = mapped_df[valid_columns]
+            
+            print(f"Final columns for {table_name}: {list(mapped_df.columns)}")
+                
+            # Flexible batch upsert for all tables
+            # Detect primary key(s) from database
             insp = inspect(self.engine)
             pk_cols = insp.get_pk_constraint(table_name)['constrained_columns']
-            if not pk_cols:
-                print(f"No primary key found for table '{table_name}'. Upsert not possible.")
-                return False
+            
+            # For fish table, use scientificName as conflict resolution since it's unique
+            if table_name == 'fish' and 'scientificName' in mapped_df.columns:
+                conflict_cols = ['scientificName']
+                pk_sql = 'scientificName'
+            elif pk_cols:
+                conflict_cols = pk_cols
+                pk_sql = ', '.join(pk_cols)
+            else:
+                print(f"No primary key found for table '{table_name}'. Using simple insert.")
+                # Simple insert without conflict resolution
+                columns = list(mapped_df.columns)
+                quoted_columns = [f'"{col}"' for col in columns]
+                insert_sql = f'INSERT INTO {table_name} ({", ".join(quoted_columns)}) VALUES ({", ".join([f":{col}" for col in columns])})'
+                values = mapped_df.to_dict(orient='records')
+                with self.engine.begin() as conn:
+                    conn.execute(text(insert_sql), values)
+                print(f"Successfully inserted {len(mapped_df)} rows to '{table_name}' on Supabase")
+                return True
+            
             columns = list(mapped_df.columns)
-            set_clause = ', '.join([f"{col}=EXCLUDED.{col}" for col in columns if col not in pk_cols])
-            pk_sql = ', '.join(pk_cols)
-            insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join([f':{col}' for col in columns])}) ON CONFLICT ({pk_sql}) DO UPDATE SET {set_clause}"
+            set_clause = ', '.join([f'"{col}"=EXCLUDED."{col}"' for col in columns if col not in conflict_cols])
+            quoted_columns = [f'"{col}"' for col in columns]
+            quoted_pk_sql = f'"{pk_sql}"' if isinstance(pk_sql, str) else ', '.join([f'"{col}"' for col in pk_sql.split(', ')])
+            insert_sql = f'INSERT INTO {table_name} ({", ".join(quoted_columns)}) VALUES ({", ".join([f":{col}" for col in columns])}) ON CONFLICT ({quoted_pk_sql}) DO UPDATE SET {set_clause}'
             values = mapped_df.to_dict(orient='records')
             with self.engine.begin() as conn:
                 conn.execute(text(insert_sql), values)
@@ -752,6 +779,35 @@ class DataImporter:
             print(f"Error importing data to table '{table_name}': {e}")
             return False
 
+    def get_or_create_data_source(self, name, description=""):
+        """Get or create a data source entry"""
+        try:
+            # Check if data source exists
+            query = text("SELECT id FROM data_sources WHERE name = :name")
+            with self.engine.connect() as conn:
+                result = conn.execute(query, {"name": name}).fetchone()
+                if result:
+                    return result[0]
+                
+                # Create new data source
+                insert_query = text("""
+                    INSERT INTO data_sources (name, description, source_type) 
+                    VALUES (:name, :description, 'Database') 
+                    RETURNING id
+                """)
+                result = conn.execute(insert_query, {
+                    "name": name, 
+                    "description": description
+                })
+                conn.commit()
+                return result.fetchone()[0]
+        except Exception as e:
+            print(f"Error creating data source: {e}")
+            return 1  # Return a default ID
+        except Exception as e:
+            print(f"Error creating data source: {e}")
+            return 1  # Return a default ID
+    
     def close(self):
         if self.conn:
             self.conn.close()
