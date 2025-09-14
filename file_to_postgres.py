@@ -768,7 +768,16 @@ class DataImporter:
             columns = list(mapped_df.columns)
             set_clause = ', '.join([f'"{col}"=EXCLUDED."{col}"' for col in columns if col not in conflict_cols])
             quoted_columns = [f'"{col}"' for col in columns]
-            quoted_pk_sql = f'"{pk_sql}"' if isinstance(pk_sql, str) else ', '.join([f'"{col}"' for col in pk_sql.split(', ')])
+            
+            # Fix: properly quote individual column names for ON CONFLICT
+            if ',' in pk_sql:
+                # Multiple columns case: split and quote each column
+                pk_column_names = [col.strip() for col in pk_sql.split(',')]
+                quoted_pk_sql = ', '.join([f'"{col}"' for col in pk_column_names])
+            else:
+                # Single column case
+                quoted_pk_sql = f'"{pk_sql}"'
+            
             insert_sql = f'INSERT INTO {table_name} ({", ".join(quoted_columns)}) VALUES ({", ".join([f":{col}" for col in columns])}) ON CONFLICT ({quoted_pk_sql}) DO UPDATE SET {set_clause}'
             values = mapped_df.to_dict(orient='records')
             with self.engine.begin() as conn:
