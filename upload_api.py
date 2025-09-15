@@ -25,6 +25,13 @@ class CityRequest(BaseModel):
     future_years: int = 5
     radius_km: float = 100.0  # Search radius in kilometers
 
+# Request model for species endpoint
+class SpeciesRequest(BaseModel):
+    scientific_name: str
+    start_year: int = 2000
+    end_year: int = 2023
+    future_years: int = 5
+
 # Predefined city coordinates
 CITY_COORDINATES = {
     "mumbai": {"lat": 19.0760, "lng": 72.8777},
@@ -99,6 +106,34 @@ def get_species_near_location(lat, lng, radius_km=100, limit=5):
         return ["Thunnus albacares", "Katsuwonus pelamis", "Scomber scombrus"]
     finally:
         db.close()
+
+@app.post("/species")
+def species_info(request: SpeciesRequest):
+    """Get marine species analysis by scientific name."""
+    try:
+        # predict_overall expects a list of species
+        response = predict_overall(
+            species_list=[request.scientific_name],
+            start_year=2000,
+            end_year=2023,
+            future_years=5
+        )
+        
+        # Add metadata to response
+        result = {
+            "species": request.scientific_name,
+            "analysis_period": {
+                "start_year": 2000,
+                "end_year": 2023,
+                "future_years_predicted": 5
+            },
+            "data": response
+        }
+        
+        return JSONResponse(content=result)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error analyzing species: {str(e)}")
 
 
 @app.post("/upload")
